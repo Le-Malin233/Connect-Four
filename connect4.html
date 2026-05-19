@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>四子棋 · 对抗搜索AI</title>
+    <!-- 引用已有的公共样式表 -->
+    <link rel="stylesheet" href="/common.css">
+    <link rel="icon" href="/images/favicon.svg" type="image/svg">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- 引入 marked 和 KaTeX（可选，但保留原风格） -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <style>
+        /* ========== 游戏特有样式（不冲突 common.css） ========== */
+        .game-card {
+            margin: 0 auto;
+            width: 100%;
+            max-width: 700px;      /* 限制最大宽度，保证大屏幕下不拉伸过宽 */
+        }
+
+        .board-wrapper {
+            display: flex;
+            justify-content: center;
+            margin: 1.2rem 0;
+            position: relative;
+        }
+
+        canvas {
+            display: block;
+            border-radius: 28px;
+            box-shadow: 0 12px 22px -8px rgba(0, 0, 0, 0.2);
+            cursor: pointer;
+            width: 100%;
+            height: auto;
+            max-width: 560px;
+            aspect-ratio: 7 / 6;
+            background-color: #f8fafc;
+        }
+        canvas.waiting {
+            cursor: wait;
+            filter: brightness(0.96);
+        }
+
+        .info-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1.5rem;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .status-box {
+            background: #f8fafc;
+            padding: 0.6rem 1.2rem;
+            border-radius: 60px;
+            font-weight: 600;
+            font-size: 1rem;
+            color: #1e293b;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.02), 0 2px 4px rgba(0,0,0,0.02);
+            flex: 2;
+            text-align: center;
+            font-family: monospace;
+            border: 1px solid #e2e8f0;
+        }
+
+        .reset-btn {
+            background: #eff6ff;
+            border: none;
+            font-size: 1rem;
+            font-weight: 600;
+            padding: 0.5rem 1.5rem;
+            border-radius: 48px;
+            color: #3b82f6;
+            cursor: pointer;
+            transition: 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-family: inherit;
+            border: 1px solid #bfdbfe;
+        }
+        .reset-btn:hover {
+            background: #3b82f6;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px -6px rgba(59,130,246,0.3);
+            border-color: #3b82f6;
+        }
+        .reset-btn:active {
+            transform: translateY(1px);
+        }
+
+        .footer-note {
+            text-align: center;
+            margin-top: 1.8rem;
+            color: #62748c;
+            font-size: 0.75rem;
+            border-top: 1px solid #eef2ff;
+            padding-top: 1.2rem;
+        }
+
+        /* 深色模式适配 */
+        @media (prefers-color-scheme: dark) {
+            canvas {
+                background-color: #1e293b;
+            }
+            .status-box {
+                background: #0f172a;
+                border-color: #334155;
+                color: #e2e8f0;
+            }
+            .reset-btn {
+                background: #2d3a5e;
+                color: #60a5fa;
+                border-color: #475569;
+            }
+            .reset-btn:hover {
+                background: #60a5fa;
+                color: #0f172a;
+            }
+            .footer-note {
+                color: #94a3b8;
+                border-top-color: #334155;
+            }
+        }
+
+        /* 响应式调整 */
+        @media (max-width: 640px) {
+            .status-box {
+                font-size: 0.85rem;
+                padding: 0.4rem 1rem;
+            }
+        }
+    </style>
+</head>
+<body class="article-page">
+<div class="container">
+    <!-- 左侧栏（与主页相同） -->
+    <aside class="sidebar">
+        <div class="avatar"><div class="avatar-circle"><img src="/images/avatar.jpg" alt="头像"></div></div>
+        <div class="name">Le Malin</div>
+        <div style="text-align: center;">
+            <span class="title">Shanghai Jiao Tong University, <br>Computer Science and Technology</span>
+        </div>
+        <div class="bio">Le Malin 是恶毒，空想级驱逐舰3号舰</div>
+        <div class="info-item"><i class="fas fa-map-marker-alt"></i> <span>Shanghai, China</span></div>
+        <div class="info-item"><i class="fas fa-envelope"></i> <span>2206475800@qq.com</span></div>
+        <div class="info-item"><i class="fas fa-laptop-code"></i> <span>Undergraduate</span></div>
+        <div class="social-links">
+            <a href="https://github.com/Le-Malin233" target="_blank" rel="noopener noreferrer"><i class="fab fa-github"></i></a>
+            <a href="https://space.bilibili.com/204257229" target="_blank" rel="noopener noreferrer"><i class="fab fa-bilibili"></i></a>
+            <a href="https://www.jetphotos.com/photographer/520278" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-camera"></i></a>
+        </div>
+    </aside>
+
+    <!-- 右侧主内容区：移除多余的嵌套 .container，让游戏卡片直接放在 main-content 中 -->
+    <main class="main-content">
+        <a href="/index.html" class="back-home"><i class="fas fa-arrow-left"></i> 返回首页</a>
+        <div class="game-card">
+            <div class="section-header">
+                <h2>⚫ 四子棋 · AI 对抗</h2>
+                <div class="depth-badge">🤖 Minimax + Alpha‑Beta 深度5</div>
+            </div>
+
+            <div class="board-wrapper">
+                <canvas id="connectCanvas" width="560" height="480"></canvas>
+            </div>
+
+            <div class="info-panel">
+                <div class="status-box" id="gameStatus">
+                    🤖 AI 思考中 ...
+                </div>
+                <button class="reset-btn" id="resetButton">
+                    🔄 新的一局
+                </button>
+            </div>
+            <div class="footer-note">
+                ⚫ AI (X) 先手 &nbsp;&nbsp;|&nbsp;&nbsp; ⚪ 你 (O) 后手 &nbsp;&nbsp;|&nbsp;&nbsp; 点击棋盘上方列落子
+            </div>
+        </div>
+        <!-- 可选底部信息，可保留或删除 -->
+        <div class="footer-note">
+            <i class="far fa-comment-dots"></i> 每一个项目都是探索的脚印
+        </div>
+    </main>
+</div>
+
+<script>
+    (function(){
+        // ---------- 四子棋核心参数 ----------
+        const ROWS = 6;
+        const COLS = 7;
+        const WIN_LEN = 4;
+        const EMPTY = 0;
+        const AI_PIECE = 1;      // AI 黑棋
+        const HUMAN_PIECE = -1;   // 玩家 白棋
+
+        // 评估分数权重
+        const SCORE_ONE = 1;
+        const SCORE_TWO = 10;
+        const SCORE_THREE = 100;
+        const SCORE_WIN = 1000000;
+
+        const SEARCH_DEPTH = 5;
+
+        // 全局状态
+        let board = Array(ROWS).fill().map(() => Array(COLS).fill(EMPTY));
+        let currentTurn = AI_PIECE;
+        let gameOver = false;
+        let winner = null;
+        
+        // UI 元素
+        const canvas = document.getElementById('connectCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusDiv = document.getElementById('gameStatus');
+        
+        let isAIThinking = false;
+        let isAnimating = false;
+        let animationFrame = null;
+        
+        // 棋盘绘制参数
+        const cellW = canvas.width / COLS;
+        const cellH = canvas.height / ROWS;
+        const pieceRadius = Math.min(cellW, cellH) * 0.38;
+        
+        // ---------- 辅助函数 ----------
+        function isValidMove(col) {
+            return col >= 0 && col < COLS && board[0][col] === EMPTY;
+        }
+        
+        function applyDrop(col, piece) {
+            if (!isValidMove(col)) return false;
+            for (let row = ROWS-1; row >= 0; row--) {
+                if (board[row][col] === EMPTY) {
+                    board[row][col] = piece;
+                    return true;
+                }
+            }
+            return false;
+        }
+        
+        function undoDrop(col) {
+            for (let row = 0; row < ROWS; row++) {
+                if (board[row][col] !== EMPTY) {
+                    board[row][col] = EMPTY;
+                    return;
+                }
+            }
+        }
+        
+        // ---------- 胜负判定 (全盘扫描) ----------
+        function checkWinOnBoard(boardState, piece) {
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c <= COLS - WIN_LEN; c++) {
+                    let win = true;
+                    for (let i = 0; i < WIN_LEN; i++) {
+                        if (boardState[r][c+i] !== piece) { win = false; break; }
+                    }
+                    if (win) return true;
+                }
+            }
+            for (let c = 0; c < COLS; c++) {
+                for (let r = 0; r <= ROWS - WIN_LEN; r++) {
+                    let win = true;
+                    for (let i = 0; i < WIN_LEN; i++) {
+                        if (boardState[r+i][c] !== piece) { win = false; break; }
+                    }
+                    if (win) return true;
+                }
+            }
+            for (let r = 0; r <= ROWS - WIN_LEN; r++) {
+                for (let c = 0; c <= COLS - WIN_LEN; c++) {
+                    let win = true;
+                    for (let i = 0; i < WIN_LEN; i++) {
+                        if (boardState[r+i][c+i] !== piece) { win = false; break; }
+                    }
+                    if (win) return true;
+                }
+            }
+            for (let r = WIN_LEN-1; r < ROWS; r++) {
+                for (let c = 0; c <= COLS - WIN_LEN; c++) {
+                    let win = true;
+                    for (let i = 0; i < WIN_LEN; i++) {
+                        if (boardState[r-i][c+i] !== piece) { win = false; break; }
+                    }
+                    if (win) return true;
+                }
+            }
+            return false;
+        }
+        
+        function isDrawOnBoard(boardState) {
+            for (let c = 0; c < COLS; c++) {
+                if (boardState[0][c] === EMPTY) return false;
+            }
+            return true;
+        }
+        
+        function getGameOverInfo() {
+            if (checkWinOnBoard(board, AI_PIECE)) return { over: true, winner: 'AI' };
+            if (checkWinOnBoard(board, HUMAN_PIECE)) return { over: true, winner: 'player' };
+            if (isDrawOnBoard(board)) return { over: true, winner: 'draw' };
+            return { over: false, winner: null };
+        }
+        
+        function updateGameOverFlag() {
+            const info = getGameOverInfo();
+            gameOver = info.over;
+            winner = info.winner;
+            return gameOver;
+        }
+        
+        // ---------- 评估函数 ----------
+        function evaluateWindow(windowArr) {
+            let aiCount = 0, humanCount = 0;
+            for (let i = 0; i < WIN_LEN; i++) {
+                if (windowArr[i] === AI_PIECE) aiCount++;
+                else if (windowArr[i] === HUMAN_PIECE) humanCount++;
+            }
+            if (aiCount > 0 && humanCount > 0) return 0;
+            if (aiCount === 0 && humanCount === 0) return 0;
+            if (aiCount > 0) {
+                if (aiCount === 1) return SCORE_ONE;
+                if (aiCount === 2) return SCORE_TWO;
+                if (aiCount === 3) return SCORE_THREE;
+                if (aiCount === 4) return SCORE_WIN;
+            } else if (humanCount > 0) {
+                if (humanCount === 1) return -SCORE_ONE;
+                if (humanCount === 2) return -SCORE_TWO;
+                if (humanCount === 3) return -SCORE_THREE;
+                if (humanCount === 4) return -SCORE_WIN;
+            }
+            return 0;
+        }
+        
+        function evaluateBoardState(boardState) {
+            let total = 0;
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c <= COLS - WIN_LEN; c++) {
+                    let window = [];
+                    for (let i = 0; i < WIN_LEN; i++) window.push(boardState[r][c+i]);
+                    total += evaluateWindow(window);
+                }
+            }
+            for (let c = 0; c < COLS; c++) {
+                for (let r = 0; r <= ROWS - WIN_LEN; r++) {
+                    let window = [];
+                    for (let i = 0; i < WIN_LEN; i++) window.push(boardState[r+i][c]);
+                    total += evaluateWindow(window);
+                }
+            }
+            for (let r = 0; r <= ROWS - WIN_LEN; r++) {
+                for (let c = 0; c <= COLS - WIN_LEN; c++) {
+                    let window = [];
+                    for (let i = 0; i < WIN_LEN; i++) window.push(boardState[r+i][c+i]);
+                    total += evaluateWindow(window);
+                }
+            }
+            for (let r = WIN_LEN-1; r < ROWS; r++) {
+                for (let c = 0; c <= COLS - WIN_LEN; c++) {
+                    let window = [];
+                    for (let i = 0; i < WIN_LEN; i++) window.push(boardState[r-i][c+i]);
+                    total += evaluateWindow(window);
+                }
+            }
+            return total;
+        }
+        
+        // ---------- Minimax + Alpha-Beta ----------
+        function minimax(depth, alpha, beta, isMaximizing) {
+            if (depth === 0) return evaluateBoardState(board);
+            const aiWin = checkWinOnBoard(board, AI_PIECE);
+            const humanWin = checkWinOnBoard(board, HUMAN_PIECE);
+            const draw = isDrawOnBoard(board);
+            if (aiWin) return SCORE_WIN;
+            if (humanWin) return -SCORE_WIN;
+            if (draw) return 0;
+            
+            if (isMaximizing) {
+                let maxEval = -Infinity;
+                for (let col = 0; col < COLS; col++) {
+                    if (isValidMove(col)) {
+                        applyDrop(col, AI_PIECE);
+                        let evalScore = minimax(depth-1, alpha, beta, false);
+                        undoDrop(col);
+                        maxEval = Math.max(maxEval, evalScore);
+                        alpha = Math.max(alpha, evalScore);
+                        if (beta <= alpha) break;
+                    }
+                }
+                return maxEval === -Infinity ? evaluateBoardState(board) : maxEval;
+            } else {
+                let minEval = Infinity;
+                for (let col = 0; col < COLS; col++) {
+                    if (isValidMove(col)) {
+                        applyDrop(col, HUMAN_PIECE);
+                        let evalScore = minimax(depth-1, alpha, beta, true);
+                        undoDrop(col);
+                        minEval = Math.min(minEval, evalScore);
+                        beta = Math.min(beta, evalScore);
+                        if (beta <= alpha) break;
+                    }
+                }
+                return minEval === Infinity ? evaluateBoardState(board) : minEval;
+            }
+        }
+        
+        function getBestAIMove() {
+            let bestScore = -Infinity;
+            let bestCol = -1;
+            for (let col = 0; col < COLS; col++) {
+                if (isValidMove(col)) {
+                    applyDrop(col, AI_PIECE);
+                    let score = minimax(SEARCH_DEPTH - 1, -Infinity, Infinity, false);
+                    undoDrop(col);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestCol = col;
+                    }
+                }
+            }
+            return bestCol;
+        }
+        
+        // ---------- 绘制棋盘 ----------
+        function drawBoard() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const bgColor = isDark ? '#1e293b' : '#f8fafc';
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.beginPath();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = isDark ? '#475569' : '#cbd5e1';
+            for (let i = 0; i <= ROWS; i++) {
+                ctx.moveTo(0, i * cellH);
+                ctx.lineTo(canvas.width, i * cellH);
+                ctx.stroke();
+            }
+            for (let i = 0; i <= COLS; i++) {
+                ctx.moveTo(i * cellW, 0);
+                ctx.lineTo(i * cellW, canvas.height);
+                ctx.stroke();
+            }
+            
+            for (let row = 0; row < ROWS; row++) {
+                for (let col = 0; col < COLS; col++) {
+                    const val = board[row][col];
+                    if (val !== EMPTY) {
+                        const x = col * cellW + cellW/2;
+                        const y = row * cellH + cellH/2;
+                        drawPiece(x, y, val);
+                    }
+                }
+            }
+        }
+        
+        function drawPiece(x, y, piece) {
+            ctx.save();
+            ctx.shadowBlur = 0;
+            ctx.beginPath();
+            ctx.arc(x, y, pieceRadius-2, 0, Math.PI*2);
+            if (piece === AI_PIECE) {
+                const grad = ctx.createRadialGradient(x-6, y-6, 5, x, y, pieceRadius-2);
+                grad.addColorStop(0, '#3a3a3a');
+                grad.addColorStop(1, '#1a1a1a');
+                ctx.fillStyle = grad;
+            } else {
+                const grad = ctx.createRadialGradient(x-6, y-6, 5, x, y, pieceRadius-2);
+                grad.addColorStop(0, '#fefefe');
+                grad.addColorStop(1, '#d4d4d8');
+                ctx.fillStyle = grad;
+            }
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x-4, y-4, pieceRadius*0.2, 0, Math.PI*2);
+            ctx.fillStyle = piece === AI_PIECE ? '#aaaaaa' : '#ffffffcc';
+            ctx.fill();
+            ctx.restore();
+        }
+        
+        // ---------- 下落动画 ----------
+        function animateDrop(col, piece, onComplete) {
+            if (isAnimating) return;
+            let targetRow = -1;
+            for (let r = ROWS-1; r >= 0; r--) {
+                if (board[r][col] === EMPTY) {
+                    targetRow = r;
+                    break;
+                }
+            }
+            if (targetRow === -1) {
+                if (onComplete) onComplete(false);
+                return;
+            }
+            
+            isAnimating = true;
+            const startX = col * cellW + cellW/2;
+            const startY = -pieceRadius;
+            const endX = startX;
+            const endY = targetRow * cellH + cellH/2;
+            const duration = 280;
+            const startTime = performance.now();
+            
+            function animateFrame(now) {
+                const elapsed = now - startTime;
+                let t = Math.min(1, elapsed / duration);
+                const ease = 1 - Math.pow(1 - t, 3);
+                const currentY = startY + (endY - startY) * ease;
+                
+                drawBoard();
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(0, 0, canvas.width, canvas.height);
+                ctx.clip();
+                drawPiece(startX, currentY, piece);
+                ctx.restore();
+                
+                if (t < 1) {
+                    animationFrame = requestAnimationFrame(animateFrame);
+                } else {
+                    cancelAnimationFrame(animationFrame);
+                    animationFrame = null;
+                    const success = applyDrop(col, piece);
+                    drawBoard();
+                    isAnimating = false;
+                    if (onComplete) onComplete(success);
+                }
+            }
+            
+            if (animationFrame) cancelAnimationFrame(animationFrame);
+            animationFrame = requestAnimationFrame(animateFrame);
+        }
+        
+        function afterMove() {
+            drawBoard();
+            const ended = updateGameOverFlag();
+            if (ended) {
+                drawBoard();
+                updateStatusText();
+                return true;
+            }
+            currentTurn = (currentTurn === AI_PIECE) ? HUMAN_PIECE : AI_PIECE;
+            updateStatusText();
+            drawBoard();
+            return false;
+        }
+        
+        function playerMove(col) {
+            if (gameOver) return false;
+            if (currentTurn !== HUMAN_PIECE) {
+                statusDiv.innerHTML = '⏳ 请等待AI落子...';
+                return false;
+            }
+            if (isAIThinking || isAnimating) return false;
+            if (!isValidMove(col)) return false;
+            
+            animateDrop(col, HUMAN_PIECE, (success) => {
+                if (!success) return;
+                const finished = afterMove();
+                if (finished) {
+                    updateStatusText();
+                    return;
+                }
+                if (!gameOver && currentTurn === AI_PIECE) {
+                    aiMove();
+                }
+            });
+            return true;
+        }
+        
+        function aiMove() {
+            if (gameOver) return;
+            if (currentTurn !== AI_PIECE) return;
+            if (isAIThinking || isAnimating) return;
+            
+            isAIThinking = true;
+            canvas.classList.add('waiting');
+            updateStatusText();
+            drawBoard();
+            
+            setTimeout(() => {
+                if (gameOver || currentTurn !== AI_PIECE) {
+                    isAIThinking = false;
+                    canvas.classList.remove('waiting');
+                    return;
+                }
+                let bestCol = getBestAIMove();
+                if (bestCol === -1) {
+                    const ended = updateGameOverFlag();
+                    if (!ended && isDrawOnBoard(board)) {
+                        gameOver = true;
+                        winner = 'draw';
+                    }
+                    isAIThinking = false;
+                    canvas.classList.remove('waiting');
+                    drawBoard();
+                    updateStatusText();
+                    return;
+                }
+                animateDrop(bestCol, AI_PIECE, (success) => {
+                    isAIThinking = false;
+                    canvas.classList.remove('waiting');
+                    if (!success) return;
+                    const finished = afterMove();
+                    if (finished) updateStatusText();
+                });
+            }, 20);
+        }
+        
+        function updateStatusText() {
+            if (gameOver) {
+                if (winner === 'AI') statusDiv.innerHTML = '🏆 AI 胜利！ 点击重置 🏆';
+                else if (winner === 'player') statusDiv.innerHTML = '🎉 你赢了！ 太厉害了 🎉';
+                else if (winner === 'draw') statusDiv.innerHTML = '🤝 平局！ 势均力敌 🤝';
+                else statusDiv.innerHTML = '⚙️ 游戏结束';
+                return;
+            }
+            if (currentTurn === AI_PIECE) statusDiv.innerHTML = '🤖 AI 思考中 ... ⚡';
+            else statusDiv.innerHTML = '🎨 你的回合 · 点击上方列落子 🎨';
+        }
+        
+        function resetGame() {
+            if (isAnimating) {
+                if (animationFrame) cancelAnimationFrame(animationFrame);
+                isAnimating = false;
+            }
+            if (isAIThinking) isAIThinking = false;
+            board = Array(ROWS).fill().map(() => Array(COLS).fill(EMPTY));
+            currentTurn = AI_PIECE;
+            gameOver = false;
+            winner = null;
+            drawBoard();
+            updateStatusText();
+            canvas.classList.remove('waiting');
+            aiMove();
+        }
+        
+        function handleCanvasClick(e) {
+            if (gameOver) return;
+            if (currentTurn !== HUMAN_PIECE) return;
+            if (isAIThinking || isAnimating) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            let mouseX = (e.clientX - rect.left) * scaleX;
+            if (mouseX < 0) mouseX = 0;
+            if (mouseX > canvas.width) mouseX = canvas.width;
+            const col = Math.floor(mouseX / cellW);
+            if (col >= 0 && col < COLS) playerMove(col);
+        }
+        
+        function init() {
+            drawBoard();
+            canvas.addEventListener('click', handleCanvasClick);
+            document.getElementById('resetButton').addEventListener('click', () => resetGame());
+            resetGame();
+        }
+        
+        init();
+    })();
+</script>
+</body>
+</html>
